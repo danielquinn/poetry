@@ -29,6 +29,7 @@ class DebugResolveCommand(InitCommand):
 
     def handle(self):
         from poetry.core.packages.project_package import ProjectPackage
+        from poetry.factory import Factory
         from poetry.io.null_io import NullIO
         from poetry.puzzle import Solver
         from poetry.repositories.pool import Pool
@@ -36,6 +37,7 @@ class DebugResolveCommand(InitCommand):
         from poetry.utils.env import EnvManager
 
         packages = self.argument("package")
+        factory = Factory()
 
         if not packages:
             package = self.poetry.package
@@ -59,7 +61,6 @@ class DebugResolveCommand(InitCommand):
 
             for constraint in requirements:
                 name = constraint.pop("name")
-                dep = package.add_dependency(name, constraint)
                 extras = []
                 for extra in self.option("extras"):
                     if " " in extra:
@@ -67,8 +68,9 @@ class DebugResolveCommand(InitCommand):
                     else:
                         extras.append(extra)
 
-                for ex in extras:
-                    dep.extras.append(ex)
+                constraint["extras"] = extras
+
+                package.add_dependency(factory.create_dependency(name, constraint))
 
         package.python_versions = self.option("python") or (
             self.poetry.package.python_versions
@@ -122,7 +124,7 @@ class DebugResolveCommand(InitCommand):
 
             pkg = op.package
             row = [
-                "<c1>{}</c1>".format(pkg.name),
+                "<c1>{}</c1>".format(pkg.complete_name),
                 "<b>{}</b>".format(pkg.version),
                 "",
             ]

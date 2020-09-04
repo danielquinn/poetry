@@ -17,7 +17,6 @@ python-versions = "*"
 
 [package.source]
 type = "directory"
-reference = ""
 url = "tests/fixtures/project_with_setup"
 
 [package.dependencies]

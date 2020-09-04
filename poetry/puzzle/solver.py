@@ -100,17 +100,36 @@ class Solver:
                                 and locked.source_type == pkg.source_type
                                 and locked_source_url == pkg_source_url
                                 and locked.source_reference == pkg.source_reference
+                                and locked.source_resolved_reference
+                                == pkg.source_resolved_reference
                             ):
-                                pkg = Package(pkg.name, locked.version)
-                                pkg.source_type = "git"
-                                pkg.source_url = locked.source_url
-                                pkg.source_reference = locked.source_reference
+                                pkg = Package(
+                                    pkg.name,
+                                    locked.version,
+                                    source_type="git",
+                                    source_url=locked.source_url,
+                                    source_reference=locked.source_reference,
+                                    source_resolved_reference=locked.source_resolved_reference,
+                                )
                                 break
 
                         if pkg_source_url != package_source_url or (
-                            pkg.source_reference != package.source_reference
+                            (
+                                not pkg.source_resolved_reference
+                                or not package.source_resolved_reference
+                            )
+                            and pkg.source_reference != package.source_reference
                             and not pkg.source_reference.startswith(
                                 package.source_reference
+                            )
+                            or (
+                                pkg.source_resolved_reference
+                                and package.source_resolved_reference
+                                and pkg.source_resolved_reference
+                                != package.source_resolved_reference
+                                and not pkg.source_resolved_reference.startswith(
+                                    package.source_resolved_reference
+                                )
                             )
                         ):
                             operations.append(Update(pkg, package, priority=depths[i]))
@@ -221,11 +240,31 @@ class Solver:
         except SolveFailure as e:
             raise SolverProblemError(e)
 
+        # packages = [package for package in packages if not package.features]
         graph = self._build_graph(self._package, packages)
+
+        # Merging feature packages with base packages
+        for package in packages:
+            if package.features:
+                for _package in packages:
+                    if (
+                        _package.name == package.name
+                        and not _package.is_same_package_as(package)
+                        and _package.version == package.version
+                    ):
+                        for dep in package.requires:
+                            if dep.is_same_package_as(_package):
+                                continue
+
+                            if dep not in _package.requires:
+                                _package.requires.append(dep)
 
         depths = []
         final_packages = []
         for package in packages:
+            if package.features:
+                continue
+
             category, optional, depth = self._get_tags_for_package(package, graph)
 
             package.category = category
@@ -244,42 +283,21 @@ class Solver:
             optional = True
         else:
             category = dep.category
-            optional = dep.is_optional() and not dep.is_activated()
+            optional = dep.is_optional()
 
-        childrens = []  # type: List[Dict[str, Any]]
+        children = []  # type: List[Dict[str, Any]]
         graph = {
             "name": package.name,
+            "complete_name": package.complete_name,
             "category": category,
             "optional": optional,
-            "children": childrens,
+            "children": children,
         }
 
         if previous_dep and previous_dep is not dep and previous_dep.name == dep.name:
             return graph
 
         for dependency in package.all_requires:
-            is_activated = True
-            if dependency.is_optional():
-                if not package.is_root() and (
-                    not previous_dep or not previous_dep.extras
-                ):
-                    continue
-
-                is_activated = False
-                for group, extra_deps in package.extras.items():
-                    if dep:
-                        extras = previous_dep.extras
-                    elif package.is_root():
-                        extras = package.extras
-                    else:
-                        extras = []
-
-                    if group in extras and dependency.name in (
-                        d.name for d in package.extras[group]
-                    ):
-                        is_activated = True
-                        break
-
             if previous and previous["name"] == dependency.name:
                 # We have a circular dependency.
                 # Since the dependencies are resolved we can
@@ -287,13 +305,14 @@ class Solver:
                 continue
 
             for pkg in packages:
-                if pkg.name == dependency.name and dependency.constraint.allows(
-                    pkg.version
+                if (
+                    pkg.complete_name == dependency.complete_name
+                    and dependency.constraint.allows(pkg.version)
                 ):
                     # If there is already a child with this name
                     # we merge the requirements
                     existing = None
-                    for child in childrens:
+                    for child in children:
                         if (
                             child["name"] == pkg.name
                             and child["category"] == dependency.category
@@ -305,13 +324,10 @@ class Solver:
                         pkg, packages, graph, dependency, dep or dependency
                     )
 
-                    if not is_activated:
-                        child_graph["optional"] = True
-
                     if existing:
                         continue
 
-                    childrens.append(child_graph)
+                    children.append(child_graph)
 
         return graph
 

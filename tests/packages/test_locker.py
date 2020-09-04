@@ -4,6 +4,7 @@ import tempfile
 import pytest
 import tomlkit
 
+from poetry.core.packages.package import Package
 from poetry.core.packages.project_package import ProjectPackage
 from poetry.core.semver.version import Version
 from poetry.packages.locker import Locker
@@ -26,9 +27,9 @@ def root():
     return ProjectPackage("root", "1.2.3")
 
 
-def test_lock_file_data_is_ordered(locker, root):
+def test_lock_file_data_is_ordered(locker, root, f):
     package_a = get_package("A", "1.0.0")
-    package_a.add_dependency("B", "^1.0")
+    package_a.add_dependency(f.create_dependency("B", "^1.0"))
     package_a.files = [{"file": "foo", "hash": "456"}, {"file": "bar", "hash": "123"}]
     packages = [package_a, get_package("B", "1.2")]
 
@@ -146,10 +147,12 @@ A = []
     assert expected == content
 
 
-def test_lock_file_should_not_have_mixed_types(locker, root):
+def test_lock_file_should_not_have_mixed_types(locker, root, f):
     package_a = get_package("A", "1.0.0")
-    package_a.add_dependency("B", "^1.0.0")
-    package_a.add_dependency("B", {"version": ">=1.0.0", "optional": True})
+    package_a.add_dependency(f.create_dependency("B", "^1.0.0"))
+    package_a.add_dependency(
+        f.create_dependency("B", {"version": ">=1.0.0", "optional": True})
+    )
     package_a.requires[-1].activate()
     package_a.extras["foo"] = [get_dependency("B", ">=1.0.0")]
 
@@ -164,12 +167,10 @@ python-versions = "*"
 version = "1.0.0"
 
 [package.dependencies]
-[[package.dependencies.B]]
-version = "^1.0.0"
-
-[[package.dependencies.B]]
-optional = true
-version = ">=1.0.0"
+B = [
+    {version = "^1.0.0"},
+    {version = ">=1.0.0", optional = true},
+]
 
 [package.extras]
 foo = ["B (>=1.0.0)"]
@@ -222,9 +223,13 @@ A = []
 
 
 def test_locking_legacy_repository_package_should_include_source_section(root, locker):
-    package_a = get_package("A", "1.0.0")
-    package_a.source_url = "https://foo.bar"
-    package_a.source_reference = "legacy"
+    package_a = Package(
+        "A",
+        "1.0.0",
+        source_type="legacy",
+        source_url="https://foo.bar",
+        source_reference="legacy",
+    )
     packages = [package_a]
 
     locker.set_lock_data(root, packages)
@@ -242,6 +247,7 @@ version = "1.0.0"
 
 [package.source]
 reference = "legacy"
+type = "legacy"
 url = "https://foo.bar"
 
 [metadata]
@@ -307,10 +313,12 @@ python-versions = "~2.7 || ^3.4"
         _ = locker.lock_data
 
 
-def test_extras_dependencies_are_ordered(locker, root):
+def test_extras_dependencies_are_ordered(locker, root, f):
     package_a = get_package("A", "1.0.0")
     package_a.add_dependency(
-        "B", {"version": "^1.0.0", "optional": True, "extras": ["c", "a", "b"]}
+        f.create_dependency(
+            "B", {"version": "^1.0.0", "optional": True, "extras": ["c", "a", "b"]}
+        )
     )
     package_a.requires[-1].activate()
 

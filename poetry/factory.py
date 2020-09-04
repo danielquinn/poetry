@@ -126,7 +126,8 @@ class Factory(BaseFactory):
     ):  # type: (Dict[str, str], Config) -> LegacyRepository
         from .repositories.auth import Auth
         from .repositories.legacy_repository import LegacyRepository
-        from .utils.helpers import get_client_cert, get_cert
+        from .utils.helpers import get_cert
+        from .utils.helpers import get_client_cert
         from .utils.password_manager import PasswordManager
 
         if "url" in source:
@@ -152,3 +153,6 @@ class Factory(BaseFactory):
             cert=get_cert(auth_config, name),
             client_cert=get_client_cert(auth_config, name),
         )
+
+    def get_source_information(self, source_name):  # type: (str) -> Dict[str, str]
+        return {}

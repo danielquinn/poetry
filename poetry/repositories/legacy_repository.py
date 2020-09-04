@@ -27,6 +27,7 @@ from poetry.utils.patterns import wheel_file_re
 from ..inspection.info import PackageInfo
 from .auth import Auth
 from .exceptions import PackageNotFound
+from .exceptions import RepositoryError
 from .pypi_repository import PyPiRepository
 
 
@@ -221,17 +222,17 @@ class LegacyRepository(PyPiRepository):
             path=parsed.path,
         )
 
-    def find_packages(
-        self, name, constraint=None, extras=None, allow_prereleases=False
-    ):
+    def find_packages(self, dependency):
         packages = []
 
+        constraint = dependency.constraint
         if constraint is None:
             constraint = "*"
 
         if not isinstance(constraint, VersionConstraint):
             constraint = parse_constraint(constraint)
 
+        allow_prereleases = dependency.allows_prereleases()
         if isinstance(constraint, VersionRange):
             if (
                 constraint.max is not None
@@ -241,20 +242,25 @@ class LegacyRepository(PyPiRepository):
             ):
                 allow_prereleases = True
 
-        key = name
+        key = dependency.name
         if not constraint.is_any():
             key = "{}:{}".format(key, str(constraint))
+
+        ignored_pre_release_versions = []
 
         if self._cache.store("matches").has(key):
             versions = self._cache.store("matches").get(key)
         else:
-            page = self._get("/{}/".format(canonicalize_name(name).replace(".", "-")))
+            page = self._get("/{}/".format(dependency.name.replace(".", "-")))
             if page is None:
                 return []
 
             versions = []
             for version in page.versions:
                 if version.is_prerelease() and not allow_prereleases:
+                    if constraint.is_any():
+                        # we need this when all versions of the package are pre-releases
+                        ignored_pre_release_versions.append(version)
                     continue
 
                 if constraint.allows(version):
@@ -262,21 +268,28 @@ class LegacyRepository(PyPiRepository):
 
             self._cache.store("matches").put(key, versions, 5)
 
-        for version in versions:
-            package = Package(name, version)
-            package.source_type = "legacy"
-            package.source_reference = self.name
-            package.source_url = self._url
+        for package_versions in (versions, ignored_pre_release_versions):
+            for version in package_versions:
+                package = Package(
+                    dependency.name,
+                    version,
+                    source_type="legacy",
+                    source_reference=self.name,
+                    source_url=self._url,
+                )
 
-            if extras is not None:
-                package.requires_extras = extras
+                packages.append(package)
 
-            packages.append(package)
+            self._log(
+                "{} packages found for {} {}".format(
+                    len(packages), dependency.name, str(constraint)
+                ),
+                level="debug",
+            )
 
-        self._log(
-            "{} packages found for {} {}".format(len(packages), name, str(constraint)),
-            level="debug",
-        )
+            if packages or not constraint.is_any():
+                # we have matching packages, or constraint is not (*)
+                break
 
         return packages
 
@@ -289,7 +302,7 @@ class LegacyRepository(PyPiRepository):
         We also need to download every file matching this release
         to get the various hashes.
 
-        Note that, this will be cached so the subsequent operations
+        Note that this will be cached so the subsequent operations
         should be much faster.
         """
         try:
@@ -298,9 +311,9 @@ class LegacyRepository(PyPiRepository):
             return self._packages[index]
         except ValueError:
             package = super(LegacyRepository, self).package(name, version, extras)
-            package.source_type = "legacy"
-            package.source_url = self._url
-            package.source_reference = self.name
+            package._source_type = "legacy"
+            package._source_url = self._url
+            package._source_reference = self.name
 
             return package
 
@@ -361,8 +374,12 @@ class LegacyRepository(PyPiRepository):
 
     def _get(self, endpoint):  # type: (str) -> Union[Page, None]
         url = self._url + endpoint
-        response = self.session.get(url)
-        if response.status_code == 404:
-            return
+        try:
+            response = self.session.get(url)
+            if response.status_code == 404:
+                return
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            raise RepositoryError(e)
 
         return Page(url, response.content, response.headers)

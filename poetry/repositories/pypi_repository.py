@@ -14,6 +14,7 @@ from cachecontrol.controller import logger as cache_control_logger
 from cachy import CacheManager
 from html5lib.html5parser import parse
 
+from poetry.core.packages import Dependency
 from poetry.core.packages import Package
 from poetry.core.packages import dependency_from_pep_508
 from poetry.core.packages.utils.link import Link
@@ -79,22 +80,18 @@ class PyPiRepository(RemoteRepository):
     def session(self):
         return self._session
 
-    def find_packages(
-        self,
-        name,  # type: str
-        constraint=None,  # type: Union[VersionConstraint, str, None]
-        extras=None,  # type: Union[list, None]
-        allow_prereleases=False,  # type: bool
-    ):  # type: (...) -> List[Package]
+    def find_packages(self, dependency):  # type: (Dependency) -> List[Package]
         """
         Find packages on the remote server.
         """
+        constraint = dependency.constraint
         if constraint is None:
             constraint = "*"
 
         if not isinstance(constraint, VersionConstraint):
             constraint = parse_constraint(constraint)
 
+        allow_prereleases = dependency.allows_prereleases()
         if isinstance(constraint, VersionRange):
             if (
                 constraint.max is not None
@@ -105,53 +102,56 @@ class PyPiRepository(RemoteRepository):
                 allow_prereleases = True
 
         try:
-            info = self.get_package_info(name)
+            info = self.get_package_info(dependency.name)
         except PackageNotFound:
             self._log(
-                "No packages found for {} {}".format(name, str(constraint)),
+                "No packages found for {} {}".format(dependency.name, str(constraint)),
                 level="debug",
             )
             return []
 
         packages = []
+        ignored_pre_release_packages = []
 
         for version, release in info["releases"].items():
             if not release:
                 # Bad release
                 self._log(
                     "No release information found for {}-{}, skipping".format(
-                        name, version
+                        dependency.name, version
                     ),
                     level="debug",
                 )
                 continue
 
             try:
-                package = Package(name, version)
+                package = Package(info["info"]["name"], version)
             except ParseVersionError:
                 self._log(
                     'Unable to parse version "{}" for the {} package, skipping'.format(
-                        version, name
+                        version, dependency.name
                     ),
                     level="debug",
                 )
                 continue
 
             if package.is_prerelease() and not allow_prereleases:
+                if constraint.is_any():
+                    # we need this when all versions of the package are pre-releases
+                    ignored_pre_release_packages.append(package)
                 continue
 
             if not constraint or (constraint and constraint.allows(package.version)):
-                if extras is not None:
-                    package.requires_extras = extras
-
                 packages.append(package)
 
         self._log(
-            "{} packages found for {} {}".format(len(packages), name, str(constraint)),
+            "{} packages found for {} {}".format(
+                len(packages), dependency.name, str(constraint)
+            ),
             level="debug",
         )
 
-        return packages
+        return packages or ignored_pre_release_packages
 
     def package(
         self,

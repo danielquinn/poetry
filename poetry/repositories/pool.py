@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -5,6 +6,10 @@ from typing import Optional
 from .base_repository import BaseRepository
 from .exceptions import PackageNotFound
 from .repository import Repository
+
+
+if TYPE_CHECKING:
+    from poetry.core.packages import Package
 
 
 class Pool(BaseRepository):
@@ -108,7 +113,7 @@ class Pool(BaseRepository):
 
     def package(
         self, name, version, extras=None, repository=None
-    ):  # type: (str, str, List[str], str) -> "Package"
+    ):  # type: (str, str, List[str], str) -> Package
         if repository is not None:
             repository = repository.lower()
 
@@ -139,13 +144,9 @@ class Pool(BaseRepository):
         raise PackageNotFound("Package {} ({}) not found.".format(name, version))
 
     def find_packages(
-        self,
-        name,
-        constraint=None,
-        extras=None,
-        allow_prereleases=False,
-        repository=None,
+        self, dependency,
     ):
+        repository = dependency.source_name
         if repository is not None:
             repository = repository.lower()
 
@@ -157,15 +158,11 @@ class Pool(BaseRepository):
             raise ValueError('Repository "{}" does not exist.'.format(repository))
 
         if repository is not None and not self._ignore_repository_names:
-            return self.repository(repository).find_packages(
-                name, constraint, extras=extras, allow_prereleases=allow_prereleases
-            )
+            return self.repository(repository).find_packages(dependency)
 
         packages = []
-        for idx, repo in enumerate(self._repositories):
-            packages += repo.find_packages(
-                name, constraint, extras=extras, allow_prereleases=allow_prereleases
-            )
+        for repo in self._repositories:
+            packages += repo.find_packages(dependency)
 
         return packages
 

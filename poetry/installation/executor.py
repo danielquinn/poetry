@@ -561,7 +561,7 @@ class Executor(object):
         git.checkout(package.source_reference, src_dir)
 
         # Now we just need to install from the source directory
-        package.source_url = str(src_dir)
+        package._source_url = str(src_dir)
 
         return self._install_directory(operation)
 

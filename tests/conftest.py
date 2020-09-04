@@ -10,6 +10,7 @@ import pytest
 
 from poetry.config.config import Config as BaseConfig
 from poetry.config.dict_config_source import DictConfigSource
+from poetry.factory import Factory
 from poetry.inspection.info import PackageInfo
 from poetry.utils._compat import Path
 from poetry.utils.env import EnvManager
@@ -159,3 +160,8 @@ def tmp_venv(tmp_dir):
     yield venv
 
     shutil.rmtree(str(venv.path))
+
+
+@pytest.fixture
+def f():
+    return Factory()

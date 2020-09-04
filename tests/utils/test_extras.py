@@ -1,13 +1,14 @@
 import pytest
 
 from poetry.core.packages import Package
+from poetry.factory import Factory
 from poetry.utils.extras import get_extra_package_names
 
 
 _PACKAGE_FOO = Package("foo", "0.1.0")
 _PACKAGE_SPAM = Package("spam", "0.2.0")
 _PACKAGE_BAR = Package("bar", "0.3.0")
-_PACKAGE_BAR.add_dependency("foo")
+_PACKAGE_BAR.add_dependency(Factory().create_dependency("foo", "*"))
 
 
 @pytest.mark.parametrize(

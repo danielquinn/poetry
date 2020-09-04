@@ -3,12 +3,12 @@ from cleo.testers import CommandTester
 from tests.helpers import get_package
 
 
-def test_debug_resolve_gives_resolution_results(app, repo):
+def test_debug_resolve_gives_resolution_results(app, repo, f):
     command = app.find("debug resolve")
     tester = CommandTester(command)
 
     cachy2 = get_package("cachy", "0.2.0")
-    cachy2.add_dependency("msgpack-python", ">=0.5 <0.6")
+    cachy2.add_dependency(f.create_dependency("msgpack-python", ">=0.5 <0.6"))
 
     repo.add_package(get_package("cachy", "0.1.0"))
     repo.add_package(cachy2)
@@ -28,12 +28,12 @@ cachy          0.2.0
     assert expected == tester.io.fetch_output()
 
 
-def test_debug_resolve_tree_option_gives_the_dependency_tree(app, repo):
+def test_debug_resolve_tree_option_gives_the_dependency_tree(app, repo, f):
     command = app.find("debug resolve")
     tester = CommandTester(command)
 
     cachy2 = get_package("cachy", "0.2.0")
-    cachy2.add_dependency("msgpack-python", ">=0.5 <0.6")
+    cachy2.add_dependency(f.create_dependency("msgpack-python", ">=0.5 <0.6"))
 
     repo.add_package(get_package("cachy", "0.1.0"))
     repo.add_package(cachy2)
